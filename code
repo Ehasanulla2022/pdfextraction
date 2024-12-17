@@ -1,0 +1,87 @@
+import os
+import PyPDF2
+#from langchain.embeddings import SentenceTransformerEmbeddings
+from sentence_transformers import SentenceTransformer
+
+from langchain.vectorstores import FAISS
+from langchain.chains import RetrievalQA
+from langchain.llms import OpenAI
+from langchain.prompts import PromptTemplate
+import pandas as pd
+embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+
+
+# Step 1: Extract text from PDF files
+def extract_text_from_pdf(file_path):
+    """Extract text from a PDF file."""
+    pdf_text = ""
+    with open(file_path, 'rb') as file:
+        pdf_reader = PyPDF2.PdfReader(file)
+        for page in pdf_reader.pages:
+            pdf_text += page.extract_text()
+    return pdf_text
+
+# Step 2: Chunk data for better granularity
+def chunk_text(text, chunk_size=500):
+    """Split text into smaller chunks of a given size."""
+    chunks = []
+    for i in range(0, len(text), chunk_size):
+        chunks.append(text[i:i+chunk_size])
+    return chunks
+
+# Step 3: Embed chunks using SentenceTransformer
+#embedding_model = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+
+# Step 4: Store embeddings in a FAISS vector database
+def store_embeddings_in_faiss(chunks):
+    """Store text chunks in a FAISS vector database."""
+    vector_store = FAISS.from_texts(chunks, embedding_model)
+    return vector_store
+
+# Step 5: Create the RAG pipeline
+def create_rag_pipeline(vector_store):
+    """Create a Retrieval-Augmented Generation pipeline."""
+    llm = OpenAI(model="text-davinci-003", temperature=0)
+    retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 5})
+    qa_chain = RetrievalQA.from_chain_type(llm, retriever=retriever, return_source_documents=True)
+    return qa_chain
+
+# Step 6: Handle user queries
+def handle_query(qa_chain, query):
+    """Handle a user query using the RAG pipeline."""
+    response = qa_chain.run(query)
+    return response
+
+# Example: Extract and process data from PDFs
+def main():
+    # Path to the example PDF
+    pdf_path = "example.pdf"  # Replace with your PDF file
+
+    # Step 1: Extract text
+    text = extract_text_from_pdf(pdf_path)
+
+    # Step 2: Chunk text
+    chunks = chunk_text(text)
+
+    # Step 3: Store embeddings
+    vector_store = store_embeddings_in_faiss(chunks)
+
+    # Step 4: Create RAG pipeline
+    qa_pipeline = create_rag_pipeline(vector_store)
+
+    # Step 5: Example Queries
+    query_1 = "What is the unemployment information based on the type of degree?"
+    query_2 = "Provide tabular data from page 6."
+
+    print("Response to Query 1:")
+    print(handle_query(qa_pipeline, query_1))
+
+    print("Response to Query 2:")
+    print(handle_query(qa_pipeline, query_2))
+
+
+if __name__ == "__main__":
+    main()
